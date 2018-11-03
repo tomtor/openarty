@@ -101,6 +101,8 @@ unsigned long ping_mac_addr;
 // sent and how many we've received the returns for.
 unsigned	ping_tx_count = 0, ping_rx_count = 0;
 
+int SIZE_LONG= sizeof(unsigned long);
+
 // This is a cheater's approach to knowing what IP to ping: we pre-load the
 // program with both the IP address to ping, as well as the MAC address
 // associated with that IP address.  Future implementations will need to
@@ -109,8 +111,8 @@ unsigned	ping_tx_count = 0, ping_rx_count = 0;
 // 2. Later, check if the IP address is not on our subnet, and if not then
 //	look up the MAC address of the router and use that MAC address when
 //	sending (no change to the IP)
-unsigned	ping_ip_addr  = IPADDR(192,168,15,1);
-unsigned long	ping_mac_addr = 0;
+unsigned	ping_ip_addr  = IPADDR(192,168,0,3);
+unsigned long	ping_mac_addr = 0x309c23618084;
 
 // My network ID.  The 192.168.15 part comes from the fact that this is a
 // local network.  The .22 (last octet) is due to the fact that this is

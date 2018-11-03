@@ -52,22 +52,22 @@ _top_of_stack = ORIGIN(blkram) + LENGTH(blkram) - 4;
 
 SECTIONS
 {
-	.rocode 0x1380000 : {
+	.rocode 0x10000000 : {
 		_boot_address = .;
 		*(.start) *(.boot)
-		} > flash
+		} > sdram
 	_kernel_image_start = . ;
 	.fastcode : {
 		*(.kernel)
 		_kernel_image_end = . ;
-		}> blkram AT> flash
+		}> blkram AT> sdram
 	_sdram_image_start = . ;
 	.ramcode : {
 		*(.text.startup)
 		*(.text*)
 		*(.rodata*) *(.strings)
 		*(.data) *(COMMON)
-		}> sdram AT> flash
+		}> sdram AT> sdram
 	_sdram_image_end = . ;
 	.bss : {
 		*(.bss)
