@@ -754,7 +754,8 @@ module	busmaster(i_clk, i_rst,
 	//	Auxilliary UART (console port)
 	//
 	//
-	wbuart	#(31'd705)	// 115200 Baud, 8N1, from 81.25M
+	wbuart	#(.INITIAL_SETUP(31'd705),	// 115200 Baud, 8N1, from 81.25M
+		.HARDWARE_FLOW_CONTROL_PRESENT(1'b0))
 		console(i_clk, 1'b0,
 		wb_cyc, (wb_stb)&&(uart_sel), wb_we, wb_addr[1:0], wb_data,
 			uart_ack, uart_stall, uart_data,
