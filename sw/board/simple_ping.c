@@ -74,6 +74,9 @@
 ////////////////////////////////////////////////////////////////////////////////
 //
 //
+
+#include <stdio.h>
+
 #include "artyboard.h"
 #include "zipcpu.h"
 #include "zipsys.h"
@@ -144,7 +147,7 @@ const int *user_sp = &user_stack[USER_STACK_SIZE];
 
 
 void	uping_reply(unsigned ipaddr, unsigned *icmp_request) {
-	unsigned	pkt[2048];
+	unsigned	pkt[512]; // [2048];
 	unsigned long	hwaddr;
 	int		maxsz = 2048;
 
@@ -254,6 +257,16 @@ void	user_task(void) {
 					icmp_echo_requests++;
 				} else
 					icmp_invalid++;
+			} else if(ipproto == IPPROTO_UDP) {
+				// UDP Here?
+				if (invalid) {
+				    //printf("BC UDP\n");
+					//sys->io_enet.n_txcmd = ENET_TXGO;
+					sys->io_enet.n_rxcmd = ENET_RXCLRERR|ENET_RXCLR;
+				    //send_ping();
+				} else {
+				    void reply_udp(unsigned *pkt);
+				    reply_udp(ip);}
 			}
 		} else if (etype == ETHERTYPE_ARP) {
 			arp_pkt_count++;
@@ -261,22 +274,27 @@ void	user_task(void) {
 				invalid = 1;
 				arp_pkt_invalid++;
 			} else if ((epayload[1] == 0x06040001)
-				&&(rxcmd & ENET_RXBROADCAST)
-				&&(epayload[6] == my_ip_addr))
-				{ // ARP Request
-				unsigned sha[2], // Senders HW address
+					&&(rxcmd & ENET_RXBROADCAST)) {
+				//printf("ARP-REQ\n");
+				if (epayload[6] == my_ip_addr) {
+					printf("MINE\n");
+					unsigned sha[2], // Senders HW address
 					sip, // Senders IP address
 					dip; // Desired IP address
-				sha[0] = epayload[2];
-				sha[1] = epayload[3]>>16;
-				sha[1] |= sha[0]<<16;
-				sha[0] >>= 16;
-				sip = (epayload[3]<<16)|(epayload[4]>>16);
-				arp_requests_received++;
-				send_arp_reply(sha[0], sha[1], sip);
+					sha[0] = epayload[2];
+					sha[1] = epayload[3]>>16;
+					sha[1] |= sha[0]<<16;
+					sha[0] >>= 16;
+					sip = (epayload[3]<<16)|(epayload[4]>>16);
+					arp_requests_received++;
+					send_arp_reply(sha[0], sha[1], sip);
+				} else
+					//send_ping(); // clear ethernet
+					sys->io_enet.n_rxcmd = ENET_RXCLRERR|ENET_RXCLR;
 			} else if ((epayload[1] == 0x06040002) // Reply
 				&&((rxcmd & ENET_RXBROADCAST)==0)
 				&&(epayload[6] == my_ip_addr)) {
+				printf("ARP-ADD\n");
 				unsigned	sip;
 				unsigned long	sha;
 
@@ -300,6 +318,64 @@ void	user_task(void) {
 //
 ///////////
 
+void wait_busy()
+{
+    // If the network is busy transmitting, wait for it to finish
+    if (sys->io_enet.n_txcmd & ENET_TXBUSY) {
+    	//printf("W");
+        while(sys->io_enet.n_txcmd & ENET_TXBUSY)
+            ; // printf(".");
+        //printf("\n");
+    }
+}
+
+
+void reply_udp(unsigned *ip)
+{
+	//wait_busy();
+//	static unsigned udp;
+//	printf("R %u\n", ++udp);
+
+    // Form a packet to transmit
+    //unsigned *pkt = (unsigned *)&sys->io_enet_tx;
+	char buf[1100];
+	//memset(buf, sizeof(buf), 0);
+	unsigned *pkt= (unsigned*)buf;
+
+    pkt[0] = (ping_mac_addr>>16);
+    pkt[1] = ((unsigned)(ping_mac_addr<<16))|ETHERTYPE_IP;
+    pkt[2] = ip[0];
+    pkt[3] = ip[1];
+    //printf("%08x\n", ip[2]);
+    pkt[4] = ip[2] & 0xFFFF0000; // Has old header checksum
+    pkt[5] = my_ip_addr;
+    pkt[6] = ping_ip_addr; // ip[3]; // dest = old source
+
+    if (((ip[0] >> 24) & 0xF) > 5) {
+        printf("Options: %d %08x!\r\n", ((ip[0] >> 24) & 0xF) > 5, ip[0]);
+        return;
+    }
+
+    pkt[7] = (ip[5] >> 16) | (7777 << 16); // UDP ports
+    pkt[8] = (ip[6] & 0xFFFF0000); // length and checksum
+    //printf("%08x\n", ip[6]);
+    //pkt[9] = ip[7]; // first data
+    for (int i= 0; i < 257; i++)
+    	pkt[9+i]= ip[7+i];
+
+    // Calculate the IP header checksum
+    pkt[4] |= ipcksum(5, &pkt[2]);
+
+    // Calculate the PING payload checksum
+    //pkt[7] &= 0xffff0000;
+    //pkt[7] |= ipcksum(2, &pkt[7]);
+
+    // Finally, send the packet -- 9*4 = our total number of octets
+    //sys->io_enet.n_txcmd = ENET_TXCMD((9+257)*4);
+
+    syscall(KTRAPID_SENDPKT,0,(unsigned)pkt, (9+257)*4);
+}
+
 
 void	send_ping(void) {
 	unsigned *pkt;
@@ -310,11 +386,7 @@ void	send_ping(void) {
 		return;
 	}
 
-	// If the network is busy transmitting, wait for it to finish
-	if (sys->io_enet.n_txcmd & ENET_TXBUSY) {
-		while(sys->io_enet.n_txcmd & ENET_TXBUSY)
-			;
-	}
+	wait_busy();
 
 	// Form a packet to transmit
 	pkt = (unsigned *)&sys->io_enet_tx;
@@ -357,6 +429,8 @@ int main(int argc, char **argv) {
 	user_context[13] = (unsigned)user_sp;
 	user_context[15] = (unsigned)user_task;
 	restore_context(user_context);
+
+	printf("GO!\n");
 
 	init_arp_table();
 
