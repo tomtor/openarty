@@ -206,6 +206,11 @@ extern	void	_bootloader(void) __attribute__ ((section (".boot")));
 #ifndef	SKIP_BOOTLOADER
 void	_bootloader(void) {
 	int *sdend = _sdram_image_end, *bsend = _bss_image_end;
+#if 1
+	while (sdend < bsend)
+		*sdend++ = 0;
+	return;
+#endif
 	if (sdend < _sdram)
 		sdend = _sdram;	// R7
 	if (bsend < sdend)

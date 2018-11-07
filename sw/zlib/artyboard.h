@@ -42,7 +42,7 @@
 
 #include <stdint.h>
 
-#define SKIP_BOOTLOADER
+//#define SKIP_BOOTLOADER
 
 // We have the full ZIP System installed
 #define	_HAVE_ZIPSYS_PERFORMANCE_COUNTERS
