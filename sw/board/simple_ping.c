@@ -141,7 +141,7 @@ unsigned	pkt_id = 0;
 //
 // We'll give our user 64kW of global variables
 //
-#define	USER_STACK_SIZE	4096
+#define	USER_STACK_SIZE	1024 // 4096
 int	user_stack[USER_STACK_SIZE];
 const int *user_sp = &user_stack[USER_STACK_SIZE];
 
@@ -196,6 +196,8 @@ void	uping_reply(unsigned ipaddr, unsigned *icmp_request) {
 }
 
 unsigned	rxpkt[2048];
+
+//void user_task(void) __attribute__((section(".fastcode")));
 void	user_task(void) {
 	unsigned	rtc = sys->io_rtc.r_clock;
 
@@ -261,9 +263,8 @@ void	user_task(void) {
 				// UDP Here?
 				if (invalid) {
 				    //printf("BC UDP\n");
-					//sys->io_enet.n_txcmd = ENET_TXGO;
-					sys->io_enet.n_rxcmd = ENET_RXCLRERR|ENET_RXCLR;
-				    //send_ping();
+					//sys->io_enet.n_rxcmd = ENET_RXCLRERR|ENET_RXCLR;
+				    send_ping();
 				} else {
 				    void reply_udp(unsigned *pkt);
 				    reply_udp(ip);}
@@ -289,8 +290,7 @@ void	user_task(void) {
 					arp_requests_received++;
 					send_arp_reply(sha[0], sha[1], sip);
 				} else
-					//send_ping(); // clear ethernet
-					sys->io_enet.n_rxcmd = ENET_RXCLRERR|ENET_RXCLR;
+					send_ping(); // clear ethernet
 			} else if ((epayload[1] == 0x06040002) // Reply
 				&&((rxcmd & ENET_RXBROADCAST)==0)
 				&&(epayload[6] == my_ip_addr)) {
@@ -329,7 +329,7 @@ void wait_busy()
     }
 }
 
-
+//void reply_udp(unsigned *ip) __attribute__((section(".fastcode")));
 void reply_udp(unsigned *ip)
 {
 	//wait_busy();
