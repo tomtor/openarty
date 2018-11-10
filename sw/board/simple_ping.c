@@ -141,7 +141,7 @@ unsigned	pkt_id = 0;
 //
 // We'll give our user 64kW of global variables
 //
-#define	USER_STACK_SIZE	1024 // 4096
+#define	USER_STACK_SIZE	4096
 int	user_stack[USER_STACK_SIZE];
 const int *user_sp = &user_stack[USER_STACK_SIZE];
 
@@ -195,7 +195,43 @@ void	uping_reply(unsigned ipaddr, unsigned *icmp_request) {
 		ping_reply_err ++;
 }
 
-unsigned	rxpkt[2048];
+//void reply_udp(unsigned *ip) __attribute__((section(".fastcode")));
+void reply_udp(unsigned *ip)
+{
+    static int count;
+
+    count++;
+    sys->io_b.i_leds = 0x0f0 | ((count >> 7) & 0xF);
+
+    unsigned pkt[300];
+
+    pkt[0] = (ping_mac_addr>>16);
+    pkt[1] = ((unsigned)(ping_mac_addr<<16))|ETHERTYPE_IP;
+    pkt[2] = ip[0];
+    pkt[3] = ip[1];
+    pkt[4] = ip[2] & 0xFFFF0000; // Has old header checksum
+    pkt[5] = my_ip_addr;
+    pkt[6] = ping_ip_addr; // ip[3]; // dest = old source
+
+    if (((ip[0] >> 24) & 0xF) > 5) {
+        printf("Options: %d %08x!\r\n", ((ip[0] >> 24) & 0xF) > 5, ip[0]);
+        return;
+    }
+
+    pkt[7] = (ip[5] >> 16) | (7777 << 16); // UDP ports
+    pkt[8] = (ip[6] & 0xFFFF0000); // length and checksum
+
+    for (int i= 0; i < 257; i++)
+        pkt[9+i]= ip[7+i];
+
+    // Calculate the IP header checksum
+    pkt[4] |= ipcksum(5, &pkt[2]);
+
+    syscall(KTRAPID_SENDPKT,0,(unsigned)pkt, (9+257)*4);
+}
+
+#define MAX_ETHER   0x800
+unsigned	rxpkt[MAX_ETHER];
 
 //void user_task(void) __attribute__((section(".fastcode")));
 void	user_task(void) {
@@ -227,7 +263,6 @@ void	user_task(void) {
 			rxpkt[k] = sys->io_enet_rx[k];
 		epayload = &rxpkt[2];
 		sys->io_enet.n_rxcmd = ENET_RXCLR|ENET_RXCLRERR;
-
 		pkts_received++;
 
 		if (etype == ETHERTYPE_IP) {
@@ -251,20 +286,20 @@ void	user_task(void) {
 				if (icmp_type == ICMP_ECHOREPLY) {
 					// We got our ping response
 					sys->io_b.i_clrled[3] = LEDC_GREEN;
-					sys->io_b.i_leds = 0x80;
+					//sys->io_b.i_leds = 0x80;
 					ping_rx_count++;
 				} else if (icmp_type == ICMP_ECHO) {
 					// Someone is pinging us
 					uping_reply(ip[3],ip);
 					icmp_echo_requests++;
-				} else
+				} else {
 					icmp_invalid++;
+					printf("!ICMP\n");
+				}
 			} else if(ipproto == IPPROTO_UDP) {
 				// UDP Here?
 				if (invalid) {
-				    //printf("BC UDP\n");
-					//sys->io_enet.n_rxcmd = ENET_RXCLRERR|ENET_RXCLR;
-				    send_ping();
+				    printf("BC UDP\n");
 				} else {
 				    void reply_udp(unsigned *pkt);
 				    reply_udp(ip);}
@@ -276,7 +311,6 @@ void	user_task(void) {
 				arp_pkt_invalid++;
 			} else if ((epayload[1] == 0x06040001)
 					&&(rxcmd & ENET_RXBROADCAST)) {
-				//printf("ARP-REQ\n");
 				if (epayload[6] == my_ip_addr) {
 					printf("MINE\n");
 					unsigned sha[2], // Senders HW address
@@ -290,7 +324,7 @@ void	user_task(void) {
 					arp_requests_received++;
 					send_arp_reply(sha[0], sha[1], sip);
 				} else
-					send_ping(); // clear ethernet
+				    printf("OTHER\n");
 			} else if ((epayload[1] == 0x06040002) // Reply
 				&&((rxcmd & ENET_RXBROADCAST)==0)
 				&&(epayload[6] == my_ip_addr)) {
@@ -305,6 +339,8 @@ void	user_task(void) {
 					ping_mac_addr = sha;
 				arp_table_add(sip, sha);
 			}
+		} else {
+			printf("?\n");
 		}
 	}
 }
@@ -322,58 +358,9 @@ void wait_busy()
 {
     // If the network is busy transmitting, wait for it to finish
     if (sys->io_enet.n_txcmd & ENET_TXBUSY) {
-    	//printf("W");
         while(sys->io_enet.n_txcmd & ENET_TXBUSY)
-            ; // printf(".");
-        //printf("\n");
+            ;
     }
-}
-
-//void reply_udp(unsigned *ip) __attribute__((section(".fastcode")));
-void reply_udp(unsigned *ip)
-{
-	//wait_busy();
-//	static unsigned udp;
-//	printf("R %u\n", ++udp);
-
-    // Form a packet to transmit
-    //unsigned *pkt = (unsigned *)&sys->io_enet_tx;
-	char buf[1100];
-	//memset(buf, sizeof(buf), 0);
-	unsigned *pkt= (unsigned*)buf;
-
-    pkt[0] = (ping_mac_addr>>16);
-    pkt[1] = ((unsigned)(ping_mac_addr<<16))|ETHERTYPE_IP;
-    pkt[2] = ip[0];
-    pkt[3] = ip[1];
-    //printf("%08x\n", ip[2]);
-    pkt[4] = ip[2] & 0xFFFF0000; // Has old header checksum
-    pkt[5] = my_ip_addr;
-    pkt[6] = ping_ip_addr; // ip[3]; // dest = old source
-
-    if (((ip[0] >> 24) & 0xF) > 5) {
-        printf("Options: %d %08x!\r\n", ((ip[0] >> 24) & 0xF) > 5, ip[0]);
-        return;
-    }
-
-    pkt[7] = (ip[5] >> 16) | (7777 << 16); // UDP ports
-    pkt[8] = (ip[6] & 0xFFFF0000); // length and checksum
-    //printf("%08x\n", ip[6]);
-    //pkt[9] = ip[7]; // first data
-    for (int i= 0; i < 257; i++)
-    	pkt[9+i]= ip[7+i];
-
-    // Calculate the IP header checksum
-    pkt[4] |= ipcksum(5, &pkt[2]);
-
-    // Calculate the PING payload checksum
-    //pkt[7] &= 0xffff0000;
-    //pkt[7] |= ipcksum(2, &pkt[7]);
-
-    // Finally, send the packet -- 9*4 = our total number of octets
-    //sys->io_enet.n_txcmd = ENET_TXCMD((9+257)*4);
-
-    syscall(KTRAPID_SENDPKT,0,(unsigned)pkt, (9+257)*4);
 }
 
 
@@ -474,12 +461,14 @@ int main(int argc, char **argv) {
 			sys->io_b.i_clrled[1] = LEDC_GREEN;
 			send_ping();
 			sys->io_b.i_clrled[2] = LEDC_BRIGHTRED; // Have we received a response?
-			sys->io_b.i_clrled[3] = LEDC_BRIGHTRED; // Was it our ping response?
+			sys->io_b.i_clrled[3] = 0x1F; // LEDC_BLUE; // Was it our ping response?
 		}
 
 		// Clear any timer or PPS interrupts, disable all others
 		zip->z_pic = DALLPIC;
-		zip->z_pic = EINT(SYSINT_TMA|SYSINT_PPS|SYSINT_ENETRX);
+
+		#define ACTIVE (SYSINT_TMA|SYSINT_PPS|SYSINT_ENETRX)
+		zip->z_pic = EINT(ACTIVE);
 		do {
 			if ((zip->z_pic & INTNOW)==0)
 				zip_rtu();
@@ -523,7 +512,8 @@ int main(int argc, char **argv) {
 					// At this point, we are also ready to
 					// receive another packet
 					zip->z_pic = EINT(SYSINT_ENETTX|SYSINT_ENETRX);
-				}
+				} else
+				    printf("LONG\n");
 
 				user_context[14] &= ~CC_TRAP;
 				restore_context(user_context);
@@ -533,6 +523,7 @@ int main(int argc, char **argv) {
 				sys->io_b.i_clrled[1] = LEDC_WHITE;
 				sys->io_b.i_clrled[2] = LEDC_BRIGHTRED;
 				sys->io_b.i_clrled[3] = LEDC_BRIGHTRED;
+				printf("INTNOW\n");
 				zip_halt();
 			} else if ((picv & DINT(SYSINT_TMA))==0) {
 				sys->io_b.i_leds = 0x0ff;
@@ -540,6 +531,7 @@ int main(int argc, char **argv) {
 				sys->io_b.i_clrled[1] = LEDC_BRIGHTRED;
 				sys->io_b.i_clrled[2] = LEDC_WHITE;
 				sys->io_b.i_clrled[3] = LEDC_BRIGHTRED;
+                printf("SYSINT_TMA\n");
 				zip_halt();
 			} else if ((picv & DINT(SYSINT_PPS))==0) {
 				sys->io_b.i_leds = 0x0ff;
@@ -547,8 +539,10 @@ int main(int argc, char **argv) {
 				sys->io_b.i_clrled[1] = LEDC_BRIGHTRED;
 				sys->io_b.i_clrled[2] = LEDC_BRIGHTRED;
 				sys->io_b.i_clrled[3] = LEDC_WHITE;
+                printf("SYSINT_PPS\n");
 				zip_halt();
-			} if (picv & SYSINT_ENETRX) {
+			}
+			if (picv & SYSINT_ENETRX) {
 				// This will not clear until the packet has
 				// been removed and the interface reset.  For
 				// now, just double check that the interrupt
@@ -580,6 +574,7 @@ int main(int argc, char **argv) {
 				}
 			}
 		} while((picv & (SYSINT_TMA|SYSINT_PPS))==0);
+
 		if (picv & SYSINT_PPS) {
 			lastpps = 1;
 			zip->z_tma = CLOCKFREQ_HZ | TMR_INTERVAL;
