@@ -147,7 +147,7 @@ const int *user_sp = &user_stack[USER_STACK_SIZE];
 
 
 void	uping_reply(unsigned ipaddr, unsigned *icmp_request) {
-	unsigned	pkt[512]; // [2048];
+	unsigned	pkt[2048];
 	unsigned long	hwaddr;
 	int		maxsz = 2048;
 
@@ -193,6 +193,7 @@ void	uping_reply(unsigned ipaddr, unsigned *icmp_request) {
 		syscall(KTRAPID_SENDPKT,0,(unsigned)pkt, pktln);
 	} else
 		ping_reply_err ++;
+
 }
 
 //void reply_udp(unsigned *ip) __attribute__((section(".fastcode")));
@@ -258,7 +259,7 @@ void	user_task(void) {
 		int	invalid = 0;
 		int	ln, rxcmd = sys->io_enet.n_rxcmd;
 
-		ln = sys->io_enet.n_rxcmd & 0x07ff;
+		ln = sys->io_enet.n_rxcmd & (MAX_ETHER-1);
 		for(int k=0; k<(ln+3)>>2; k++)
 			rxpkt[k] = sys->io_enet_rx[k];
 		epayload = &rxpkt[2];
@@ -323,8 +324,9 @@ void	user_task(void) {
 					sip = (epayload[3]<<16)|(epayload[4]>>16);
 					arp_requests_received++;
 					send_arp_reply(sha[0], sha[1], sip);
-				} else
+				} else {
 				    printf("OTHER\n");
+				}
 			} else if ((epayload[1] == 0x06040002) // Reply
 				&&((rxcmd & ENET_RXBROADCAST)==0)
 				&&(epayload[6] == my_ip_addr)) {
@@ -459,15 +461,15 @@ int main(int argc, char **argv) {
 		} else {
 			sys->io_b.i_leds = 0x020;
 			sys->io_b.i_clrled[1] = LEDC_GREEN;
-			send_ping();
-			sys->io_b.i_clrled[2] = LEDC_BRIGHTRED; // Have we received a response?
+//			send_ping();
+//			sys->io_b.i_clrled[2] = LEDC_BRIGHTRED; // Have we received a response?
 			sys->io_b.i_clrled[3] = 0x1F; // LEDC_BLUE; // Was it our ping response?
 		}
 
 		// Clear any timer or PPS interrupts, disable all others
 		zip->z_pic = DALLPIC;
 
-		#define ACTIVE (SYSINT_TMA|SYSINT_PPS|SYSINT_ENETRX)
+		#define ACTIVE (SYSINT_TMA|SYSINT_PPS) // |SYSINT_ENETRX)
 		zip->z_pic = EINT(ACTIVE);
 		do {
 			if ((zip->z_pic & INTNOW)==0)
@@ -517,14 +519,15 @@ int main(int argc, char **argv) {
 
 				user_context[14] &= ~CC_TRAP;
 				restore_context(user_context);
-			} else if ((picv & INTNOW)==0) {
-				sys->io_b.i_leds = 0x0ff;
-				sys->io_b.i_clrled[0] = LEDC_BRIGHTRED;
-				sys->io_b.i_clrled[1] = LEDC_WHITE;
-				sys->io_b.i_clrled[2] = LEDC_BRIGHTRED;
-				sys->io_b.i_clrled[3] = LEDC_BRIGHTRED;
-				printf("INTNOW\n");
-				zip_halt();
+//			} else if ((picv & INTNOW)==0) {
+//				sys->io_b.i_leds = 0x0ff;
+//				sys->io_b.i_clrled[0] = LEDC_BRIGHTRED;
+//				sys->io_b.i_clrled[1] = LEDC_WHITE;
+//				sys->io_b.i_clrled[2] = LEDC_BRIGHTRED;
+//				sys->io_b.i_clrled[3] = LEDC_BRIGHTRED;
+//				printf("INTNOW: %08x\n", picv);
+//				zip_halt();
+//				break;
 			} else if ((picv & DINT(SYSINT_TMA))==0) {
 				sys->io_b.i_leds = 0x0ff;
 				sys->io_b.i_clrled[0] = LEDC_BRIGHTRED;
