@@ -145,15 +145,19 @@ unsigned	pkt_id = 0;
 int	user_stack[USER_STACK_SIZE];
 const int *user_sp = &user_stack[USER_STACK_SIZE];
 
+#define MAX_ETHER   1024 // 4096 bytes!?
+#define MAX_ETHERB  (MAX_ETHER*sizeof(unsigned))
+
+unsigned    rxpkt[MAX_ETHER];
 
 void	uping_reply(unsigned ipaddr, unsigned *icmp_request) {
-	unsigned	pkt[2048];
+	unsigned	pkt[MAX_ETHER];
 	unsigned long	hwaddr;
-	int		maxsz = 2048;
+	int		maxsz = MAX_ETHER;
 
 	maxsz = 1<<((sys->io_enet.n_rxcmd>>24)&0x0f);
-	if (maxsz > 2048)
-		maxsz = 2048;
+	if (maxsz > MAX_ETHER)
+		maxsz = MAX_ETHER;
 	int pktln = (icmp_request[0] & 0x0ffff)+8, pktlnw = (pktln+3)>>2;
 
 	if (arp_lookup(ipaddr, &hwaddr)!=0) {
@@ -231,8 +235,6 @@ void reply_udp(unsigned *ip)
     syscall(KTRAPID_SENDPKT,0,(unsigned)pkt, (9+257)*4);
 }
 
-#define MAX_ETHER   0x800
-unsigned	rxpkt[MAX_ETHER];
 
 //void user_task(void) __attribute__((section(".fastcode")));
 void	user_task(void) {
@@ -259,7 +261,8 @@ void	user_task(void) {
 		int	invalid = 0;
 		int	ln, rxcmd = sys->io_enet.n_rxcmd;
 
-		ln = sys->io_enet.n_rxcmd & (MAX_ETHER-1);
+		ln = sys->io_enet.n_rxcmd & (MAX_ETHERB-1);
+		//printf("%d\n", ln);
 		for(int k=0; k<(ln+3)>>2; k++)
 			rxpkt[k] = sys->io_enet_rx[k];
 		epayload = &rxpkt[2];
@@ -413,6 +416,8 @@ int main(int argc, char **argv) {
 	unsigned	user_context[16];
 	int		lastpps;
 
+	reboot:
+
 	for(int i=0; i<16; i++)
 		user_context[i] = 0;
 	user_context[13] = (unsigned)user_sp;
@@ -461,8 +466,8 @@ int main(int argc, char **argv) {
 		} else {
 			sys->io_b.i_leds = 0x020;
 			sys->io_b.i_clrled[1] = LEDC_GREEN;
-//			send_ping();
-//			sys->io_b.i_clrled[2] = LEDC_BRIGHTRED; // Have we received a response?
+			send_ping();
+			sys->io_b.i_clrled[2] = LEDC_BRIGHTRED; // Have we received a response?
 			sys->io_b.i_clrled[3] = 0x1F; // LEDC_BLUE; // Was it our ping response?
 		}
 
@@ -519,15 +524,14 @@ int main(int argc, char **argv) {
 
 				user_context[14] &= ~CC_TRAP;
 				restore_context(user_context);
-//			} else if ((picv & INTNOW)==0) {
-//				sys->io_b.i_leds = 0x0ff;
-//				sys->io_b.i_clrled[0] = LEDC_BRIGHTRED;
-//				sys->io_b.i_clrled[1] = LEDC_WHITE;
-//				sys->io_b.i_clrled[2] = LEDC_BRIGHTRED;
-//				sys->io_b.i_clrled[3] = LEDC_BRIGHTRED;
-//				printf("INTNOW: %08x\n", picv);
-//				zip_halt();
-//				break;
+			} else if ((picv & INTNOW)==0) {
+				sys->io_b.i_leds = 0x0ff;
+				sys->io_b.i_clrled[0] = LEDC_BRIGHTRED;
+				sys->io_b.i_clrled[1] = LEDC_WHITE;
+				sys->io_b.i_clrled[2] = LEDC_BRIGHTRED;
+				sys->io_b.i_clrled[3] = LEDC_BRIGHTRED;
+				printf("!INTNOW: %08x\n", picv);
+				goto reboot;
 			} else if ((picv & DINT(SYSINT_TMA))==0) {
 				sys->io_b.i_leds = 0x0ff;
 				sys->io_b.i_clrled[0] = LEDC_BRIGHTRED;
@@ -566,7 +570,7 @@ int main(int argc, char **argv) {
 			} else
 				zip->z_pic = EINT(SYSINT_ENETTX);
 			// Make certain interrupts remain enabled
-			zip->z_pic = EINT(SYSINT_TMA|SYSINT_PPS);
+			zip->z_pic = EINT(ACTIVE);
 
 			if (picv & SYSINT_TMA) {
 				if (lastpps==1)
@@ -576,7 +580,7 @@ int main(int argc, char **argv) {
 					lastpps = 0;
 				}
 			}
-		} while((picv & (SYSINT_TMA|SYSINT_PPS))==0);
+		} while((picv & ACTIVE)==0);
 
 		if (picv & SYSINT_PPS) {
 			lastpps = 1;
