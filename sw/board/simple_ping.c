@@ -328,7 +328,7 @@ void	user_task(void) {
 					arp_requests_received++;
 					send_arp_reply(sha[0], sha[1], sip);
 				} else {
-				    printf("OTHER\n");
+				    ; // printf("OTHER\n");
 				}
 			} else if ((epayload[1] == 0x06040002) // Reply
 				&&((rxcmd & ENET_RXBROADCAST)==0)
@@ -415,8 +415,6 @@ int	heartbeats = 0, subbeats = 0, gbl_picv = 0;
 int main(int argc, char **argv) {
 	unsigned	user_context[16];
 	int		lastpps;
-
-	reboot:
 
 	for(int i=0; i<16; i++)
 		user_context[i] = 0;
@@ -531,7 +529,9 @@ int main(int argc, char **argv) {
 				sys->io_b.i_clrled[2] = LEDC_BRIGHTRED;
 				sys->io_b.i_clrled[3] = LEDC_BRIGHTRED;
 				printf("!INTNOW: %08x\n", picv);
-				goto reboot;
+			    sys->io_enet.n_rxcmd = ENET_RXCLRERR|ENET_RXCLR;
+			    zip->z_pic = DALLPIC;
+			    break;
 			} else if ((picv & DINT(SYSINT_TMA))==0) {
 				sys->io_b.i_leds = 0x0ff;
 				sys->io_b.i_clrled[0] = LEDC_BRIGHTRED;
